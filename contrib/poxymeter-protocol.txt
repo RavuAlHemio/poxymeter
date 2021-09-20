@@ -7,7 +7,18 @@ vendor ID is 0x28e9, product ID is 0x028a
 both host and device send 64 bytes at a time
 shorter packets are right-padded with 0x00
 it is possible for packets to span multiple transmissions (e.g. streaming stored data)
-numbers are little-endian
+numbers spanning more than one byte are little-endian
+
+only the packet at the start of a command/response has its topmost bit set
+this is good, as it makes the protocol self-synchronizing
+(if you start listening in the middle of a stream, you can still find out where one command ends and the next one begins)
+
+this also means that you will be shifting by units of 7 instead of 8 when decoding integers spanning multiple bytes
+normally:
+    b0 | b1 << 8 | b2 << 16
+in this case:
+    b0 | b1 << 7 | b2 << 14
+
 
 setup stuff
 s 7d | 81 a7 80 80 80 80 80 | 80 || 7d | 81 a2 80 80 80 80 80 | 80
@@ -39,11 +50,14 @@ r fe | 07 | 01 00 | 06
 s 8f | 04 | 00 | 13
 r ff | 00 | 7f
 
+reading a recording performed in manual mode:
+
 s a0 | 00 | 20
 r d0 | 00 | 15 09 12 12 2e 08 00 00 00 01 02 | 4b
             yy mm dd hh mm ss       ll ll ll (recording length in seconds)
 
 s 9a 1a [keepalive?]
+[no response]
 
 s a3 | 00 00 00 | 23
 r d3 | 00 00 | 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 43
@@ -58,6 +72,7 @@ r d3 | 08 00 | 40 20 5c 01 00 00 00 00 10 00 00 00 01 00 10 00 | 39
 r d3 | 09 00 | 00 04 5c 00 00 00 01 00 00 00 00 10 00 00 00 00 | 4d
 ...
 r d3 | 7f 00 | 02 00 5b 10 00 01 00 00 00 10 00 10 09 00 09 00 | 72
+[counter rollover -- remember the rule about the topmost bit!]
 r d3 | 00 01 | 20 01 5b 00 01 00 00 10 00 10 00 00 00 01 00 01 | 73
 r d3 | 01 01 | 00 00 5c 00 00 09 00 00 00 00 00 00 00 00 00 19 | 53
 ...
@@ -110,8 +125,6 @@ s 90 | 06 | 16
 r e0 | 06 03 00 03 00 00 52 1f 00 64 51 14 00 | 31
           ^^^^^ number of files with pulse?
                 ^^^^^ number of files with SpO2?
-                         ^^ base pulse?
-                                  ^^ base SpO2?
 
 s 9c | 01 | 1d
        ^^ advance by 1 and read
@@ -124,6 +137,7 @@ r ec | 00 01 01 15 09 13 0a 0f 38 06 00 00 00 "user" 00 00 | 35
                                               ^^^^^^ username
                                                      ^^^^^ more username?
                                            ^^ also more username?
+[username does not appear to be settable, so this is all speculation]
 
 s 9c | 01 | 1d
 r ec | 00 01 02 15 09 13 0a 10 0b 07 00 00 00 "user" 00 00 | 0b
@@ -133,7 +147,7 @@ r ec | 40 01 03 15 09 13 0a 10 1d 0e 00 00 00 "user" 00 00 | 65
 
 s 9d | 02 7f 7f 7f 00 00 | 1c
 (this might delete the recorded files? the device does not acknowledge it though)
-(files are autodeleted only in auto recording mode, not in manual)
+(SpO2 Assistant auto-deletes files only after downloading in auto recording mode, not in manual)
 
 s 9b | 7f | 1a
 r eb | 7f | 6a
@@ -148,7 +162,7 @@ r eb | 00 04 40 30 | 5f
 sometimes:
 r eb | 01 06 7f 7f 7f 7f 00 | 6f
 
-# set user
+# set device ID
 s 8f | 03 | 20 20 20 "manu" | 23
 r ff | 00 | 7f
 
@@ -178,14 +192,19 @@ r e0 | 06 | 63 00 | 63 00 | 00 | 52 | 1f | 00 | 7c | 51 | 1f
 
 
 s 9d | 04 | 01 | 01 01 | 00 00 00 | 24
-            ^^ 01 = SpO2, 02 = pulse?
+            ^^ 01 = SpO2, 02 = pulse
                  ^^ = always 01?
                     ^^ = file number
 r ed | 04 | 01 | 00 00 | 63 7f 7f 75 7f 00 00 00 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 37
-            ^^ 01 = SpO2, 02 = pulse?
+            ^^ 01 = SpO2, 02 = pulse
                  ^^^^^ sequence number
-                         ^^^^^^^^ sign bits
-                                  ^^^^^... difference downward from max value
+                         ^^^^^^^^ topmost bytes for all the following bytes
+                                  ^^^^^... most values are simply the difference downward from the max value
+                                           this max value is set by a sequence of 0xFa 0xFb
+                                           whereupon the new max value becomes 0xab
+                                           (warning: don't forget the "outsourced" topmost bit!)
+                                           also, if a nibble is 0xF, it is invalid
+                                           (e.g. because a new max value is necessary the but we are at an odd-numbered nibble)
 
 s 9d | 04 | 02 | 01 01 | 00 00 00 | 25
 r ed | 04 | 02 | 00 00 63 7f 7f 74 75 00 01 11 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 3f
@@ -309,7 +328,7 @@ r ed | 04 | 02 | 0d 00 | 47 7f 7f | 2a 19 18 77 77 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f
 
 
 
-live data comes in two kinds:
+live data comes in two kinds
 
 start live data:
 s 9b | 00 | 1b
@@ -317,8 +336,10 @@ s 9b | 00 | 1b
 stop live data?:
 s 9b | 7f | 1a
 
-don't bother with curve? (verify this):
+start live data without curve:
 s 9b | 01 | 1c
+[however, that means that the data is queued up and transferred every 3s]
+[to get fresh values, it might make sense to start full live data and only take the actual values]
 
 1. pulse curve (00)
 
@@ -432,7 +453,7 @@ this is good as it makes the protocol self-synchronizing
 
 ## PROPERTIES
 
-03: user name
+03: device ID (7-byte string)
 04: ???
 06: ??? bit mask of file slots currently occupied?
 07: recording mode (00 00: auto, 01 00: manual)
@@ -440,17 +461,4 @@ this is good as it makes the protocol self-synchronizing
 ## CHECKSUM
 
 sum of all bytes (from and including command) mod 128 (because top bit may not be set)
-mod 128 is equivalent to bitand 127
-
-
-SOME DATA
-
-d3 | 00 00 | 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 43
-d3 | 01 00 | 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 44
-d3 | 02 00 | 00 00 5b 00 00 00 00 00 00 00 00 00 10 00 00 00 | 40
-d3 | 03 00 | 00 41 5c 00 00 00 00 02 00 10 09 00 00 00 00 7f | 0d
-
-d200007f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f42
-d201007f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f43
-d2020000003d0000000000000000000000000011
-d2030000403d0000000000000000000000007f51
+mod 128 is equivalent to bitand 127 (0x7F)
