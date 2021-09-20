@@ -20,12 +20,19 @@ pub(crate) struct Opts {
 pub(crate) enum Subcommand {
     ReadFile(ReadFileSubcommand),
     LiveData,
+    SetDeviceId(SetDeviceIdSubcommand),
 }
 
 
 #[derive(Clap, Debug)]
 pub(crate) struct ReadFileSubcommand {
     pub file_index: usize,
+}
+
+
+#[derive(Clap, Debug)]
+pub(crate) struct SetDeviceIdSubcommand {
+    pub device_id: String,
 }
 
 

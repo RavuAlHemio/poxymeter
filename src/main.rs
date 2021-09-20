@@ -509,6 +509,49 @@ fn handle_read_file(oxdev: &HidDevice, mut queue: &mut CommandQueue, file_index:
     }
 }
 
+fn handle_set_device_id(oxdev: &HidDevice, mut queue: &mut CommandQueue, device_id: &str) {
+    let mut device_id_bytes: Vec<u8> = device_id.bytes().collect();
+    if device_id_bytes.len() > 7 {
+        panic!("device ID cannot be longer than 7 bytes");
+    }
+    if device_id_bytes.iter().any(|b| *b > 0x7F) {
+        panic!("device ID cannot contain bytes above 0x7F");
+    }
+    while device_id_bytes.len() < 7 {
+        // right-pad with spaces
+        device_id_bytes.push(0x20);
+    }
+
+    // set it!
+    {
+        let mut set_command = Vec::with_capacity(10);
+        set_command.push(CommandCode::SetPropertyCommand.into());
+        set_command.push(PropertyCode::DeviceId.into());
+        set_command.extend_from_slice(&device_id_bytes);
+        set_command.push(calculate_checksum(&set_command));
+        send_to_oximeter(&oxdev, &set_command)
+            .expect("failed to set device ID on oximeter");
+
+        loop {
+            receive_from_oximeter(&oxdev, &mut queue)
+                .expect("failed to obtain set-device-ID response from oximeter");
+            while let Some(response) = queue.dequeue_command() {
+                if !is_checksum_ok(&response) {
+                    continue;
+                }
+                if response.len() < 2 {
+                    continue;
+                }
+                if response[0] != CommandCode::SetPropertyResponse.into() {
+                    continue;
+                }
+
+                return;
+            }
+        }
+    }
+}
+
 
 fn main() {
     env_logger::init();
@@ -538,5 +581,6 @@ fn main() {
     match opts.subcommand {
         Subcommand::LiveData => handle_live(&oxdev, &mut queue),
         Subcommand::ReadFile(read_file) => handle_read_file(&oxdev, &mut queue, read_file.file_index),
+        Subcommand::SetDeviceId(u) => handle_set_device_id(&oxdev, &mut queue, &u.device_id),
     };
 }

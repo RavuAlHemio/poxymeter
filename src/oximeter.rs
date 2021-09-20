@@ -185,7 +185,7 @@ impl Ord for CommandCode {
 /// written using `CommandCode::SetPropertyCommand`.
 #[derive(Clone, Copy, Debug, Hash)]
 pub enum PropertyCode {
-    UserName,
+    DeviceId,
     UnknownProperty04,
     AutoRecordedFiles,
     RecordingMode,
@@ -195,7 +195,7 @@ pub enum PropertyCode {
 impl From<u8> for PropertyCode {
     fn from(b: u8) -> Self {
         match b {
-            0x03 => Self::UserName,
+            0x03 => Self::DeviceId,
             0x04 => Self::UnknownProperty04,
             0x06 => Self::AutoRecordedFiles,
             0x07 => Self::RecordingMode,
@@ -207,7 +207,7 @@ impl From<u8> for PropertyCode {
 impl From<&PropertyCode> for u8 {
     fn from(code: &PropertyCode) -> Self {
         match code {
-            PropertyCode::UserName => 0x03,
+            PropertyCode::DeviceId => 0x03,
             PropertyCode::UnknownProperty04 => 0x04,
             PropertyCode::AutoRecordedFiles => 0x06,
             PropertyCode::RecordingMode => 0x07,
