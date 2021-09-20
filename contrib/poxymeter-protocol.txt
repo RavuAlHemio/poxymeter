@@ -132,9 +132,12 @@ s 9c | 01 | 1d
 r ec | 40 01 03 15 09 13 0a 10 1d 0e 00 00 00 "user" 00 00 | 65
 
 s 9d | 02 7f 7f 7f 00 00 | 1c
+(this might delete the recorded files? the device does not acknowledge it though)
+(files are autodeleted only in auto recording mode, not in manual)
 
 s 9b | 7f | 1a
 r eb | 7f | 6a
+(maybe this deletes the files instead)
 
 
 # live data, finger out
