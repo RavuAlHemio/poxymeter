@@ -1,0 +1,453 @@
+notes regarding the protocol used by newer versions of the CMS50 pulse oximeter
+warning: very unstructured (sorry!)
+
+communication is via USB HID to endpoint 1 using URB interrupt transfers
+vendor ID is ????, product ID is ????
+
+both host and device send 64 bytes at a time
+shorter packets are right-padded with 0x00
+it is possible for packets to span multiple transmissions (e.g. streaming stored data)
+numbers are little-endian
+
+setup stuff
+s 7d | 81 a7 80 80 80 80 80 | 80 || 7d | 81 a2 80 80 80 80 80 | 80
+r f0 | 70
+
+s 82 | 02
+r f2 | 00 00 02 04 00 0c | 04
+
+s 80 | 00
+r f0 | 70
+
+s 83 | 15 09 13 03 3a 26 | 46 00 | 5d
+[set date/time? yy mm dd hh mm ss]
+[subtract 2000 from year]
+r f3 | 00 | 73
+
+s 8e | 03 | 11
+r fe | 03 | XX XX XX XX XX XX XX XX [user name] | 00
+
+s 9f | 1f
+r ef | 00 01 00 00 03 00 | 73
+
+s 81 | 01
+r f1 | XX XX XX XX XX XX XX XX [device name] | 78
+
+s 8e | 07 | 15
+r fe | 07 | 01 00 | 06
+
+s 8f | 04 | 00 | 13
+r ff | 00 | 7f
+
+s a0 | 00 | 20
+r d0 | 00 | 15 09 12 12 2e 08 00 00 00 01 02 | 4b
+            yy mm dd hh mm ss       ll ll ll (recording length in seconds)
+
+s 9a 1a [keepalive?]
+
+s a3 | 00 00 00 | 23
+r d3 | 00 00 | 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 43
+r d3 | 01 00 | 40 10 5e 00 00 00 00 00 10 00 00 00 00 10 00 00 | 22
+r d3 | 02 00 | 10 00 5b 00 00 09 10 00 00 00 00 11 11 00 01 00 | 7c
+r d3 | 03 00 | 10 40 5d 00 09 09 10 01 00 00 01 01 00 09 00 10 | 41
+r d3 | 04 00 | 00 00 5b 00 00 00 10 00 00 00 00 00 00 00 00 00 | 42
+r d3 | 05 00 | 00 00 5c 00 00 00 00 00 00 00 00 09 00 00 00 01 | 3e
+r d3 | 06 00 | 10 00 5c 00 00 00 10 00 00 10 00 00 00 01 00 09 | 6f
+r d3 | 07 00 | 00 00 5c 10 00 00 00 00 09 00 00 00 00 00 00 00 | 4f
+r d3 | 08 00 | 40 20 5c 01 00 00 00 00 10 00 00 00 01 00 10 00 | 39
+r d3 | 09 00 | 00 04 5c 00 00 00 01 00 00 00 00 10 00 00 00 00 | 4d
+...
+r d3 | 7f 00 | 02 00 5b 10 00 01 00 00 00 10 00 10 09 00 09 00 | 72
+r d3 | 00 01 | 20 01 5b 00 01 00 00 10 00 10 00 00 00 01 00 01 | 73
+r d3 | 01 01 | 00 00 5c 00 00 09 00 00 00 00 00 00 00 00 00 19 | 53
+...
+r d3 | 41 09 | 00 22 62 00 09 00 09 00 00 00 10 10 00 00 10 00 | 63
+r d3 | 42 09 | 40 7f 5f 00 00 00 00 0f 7f 7f 7f 7f 7f 7f 7f 7f | 43
+
+s a7 | 01 | 28
+r d8 | 01 00 | 59
+
+s a2 | 00 00 00 | 22
+r d2 | 00 00 | 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 42
+r d2 | 01 00 | 00 01 54 00 00 00 00 00 00 60 00 00 00 00 00 00 | 08
+r d2 | 02 00 | 40 07 4e 00 00 00 00 0b 2b 2a 2a 29 00 00 00 00 | 1c
+r d2 | 03 00 | 00 00 3b 01 00 11 01 00 01 00 00 01 00 10 00 00 | 35
+...
+[same rollover behavior as before]
+...
+r d2 | 42 09 | 40 7f 3d 00 00 00 00 0f 7f 7f 7f 7f 7f 7f 7f 7f | 20
+
+s a7 | 00 | 27
+r d8 | 00 00 | 58
+
+s a3 | 7f 00 00 22
+s a2 | 7f 00 00 21
+s a3 | 7f 00 00 22
+s a2 | 7f 00 00 21
+
+s 9b | 7f | 1a
+r eb | 7f | 6a
+
+
+
+# IF NO STORED DATA
+
+s 9f | 1f
+r ef | 00 00 00 00 00 00 | 6f
+
+# IF THREE FILES STORED (automatic recording mode)
+
+s 9f | 1f
+r ef | 00 01 40 00 00 00 | 30
+
+s 8e | 07 | 15
+r fe | 07 | 00 00 | 05
+
+s 8e | 06 | 14
+r fe | 06 | 07 00 00 00 | 0b
+
+s 90 | 06 | 16
+r e0 | 06 03 00 03 00 00 52 1f 00 64 51 14 00 | 31
+          ^^^^^ number of files with pulse?
+                ^^^^^ number of files with SpO2?
+                         ^^ base pulse?
+                                  ^^ base SpO2?
+
+s 9c | 01 | 1d
+       ^^ advance by 1 and read
+r ec | 00 01 01 15 09 13 0a 0f 38 06 00 00 00 "user" 00 00 | 35
+       ^ 4 if last
+          ^^ user index?
+             ^^ file index
+                yy mm dd hh mm ss
+                                  ^^^^^^^^ data length in seconds?
+                                              ^^^^^^ username
+                                                     ^^^^^ more username?
+                                           ^^ also more username?
+
+s 9c | 01 | 1d
+r ec | 00 01 02 15 09 13 0a 10 0b 07 00 00 00 "user" 00 00 | 0b
+
+s 9c | 01 | 1d
+r ec | 40 01 03 15 09 13 0a 10 1d 0e 00 00 00 "user" 00 00 | 65
+
+s 9d | 02 7f 7f 7f 00 00 | 1c
+
+s 9b | 7f | 1a
+r eb | 7f | 6a
+
+
+# live data, finger out
+
+r eb | 00 04 40 30 | 5f
+...
+
+sometimes:
+r eb | 01 06 7f 7f 7f 7f 00 | 6f
+
+# set user
+s 8f | 03 | 20 20 20 "manu" | 23
+r ff | 00 | 7f
+
+# set recording mode to manual?
+s 8f | 07 | 01 00 | 17
+r ff | 00 | 7f
+
+s 8e | 07 | 15
+r fe | 07 | 01 00 | 06
+
+s 9f | 1f
+r ef | 00 00 00 00 00 00 | 6f
+
+
+# set user and recording mode to auto
+s 8f | 03 | 20 20 20 "auto" | 2b
+r ff | 00 | 7f
+
+s 8f | 07 | 00 00 | 16
+r ff | 00 | 7f
+
+# autorecorded files
+s 90 | 06 | 16
+r e0 | 06 | 63 00 | 63 00 | 00 | 52 | 1f | 00 | 7c | 51 | 1f
+            ^^^^^ number of files with SpO2
+                    ^^^^^ number of files with pulse
+
+
+s 9d | 04 | 01 | 01 01 | 00 00 00 | 24
+            ^^ 01 = SpO2, 02 = pulse?
+                 ^^ = always 01?
+                    ^^ = file number
+r ed | 04 | 01 | 00 00 | 63 7f 7f 75 7f 00 00 00 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 37
+            ^^ 01 = SpO2, 02 = pulse?
+                 ^^^^^ sequence number
+                         ^^^^^^^^ sign bits
+                                  ^^^^^... difference downward from max value
+
+s 9d | 04 | 02 | 01 01 | 00 00 00 | 25
+r ed | 04 | 02 | 00 00 63 7f 7f 74 75 00 01 11 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 3f
+
+s 9d | 04 | 01 | 01 02 | 00 00 00 | 25
+r ed | 04 | 01 | 00 00 73 7f 7f 75 7f 00 00 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 46
+
+s 9d | 04 | 02 | 01 02 | 00 00 00 | 26
+r ed | 04 | 02 | 00 00 73 7f 7f 74 75 11 10 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 5d
+
+s 9d | 02 | 7f 7f 7f 00 00 | 1c
+
+s 80 | 00
+r f0 | 70
+
+s 9d | 02 | 7f 7f 7f 00 00 | 1c
+
+s 9b | 7f | 1a
+r eb | 7f | 6a
+
+s 9d | 04 | 01 | 01 03 | 00 00 00 | 26
+r ed | 04 | 01 | 00 00 03 7e 7f 75 7f 11 11 11 11 11 10 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 3e
+
+s 9d | 04 | 02 | 01 03 | 00 00 00 | 27
+r ed | 04 | 02 | 00 00 07 7e 7f 73 7d 6a 55 55 00 12 22 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 22
+
+s 9d | 02 | 7f 7f 7f 00 00 | 1c
+
+s 9d | 7f | 7f 7f 7f 00 00 | 19
+r ef | 00 00 00 00 00 00 6f ed 7f 7f 7f 7f 00 | 69
+
+s 9b | 7f | 1a
+r eb | 7f | 6a
+
+different capture:
+
+s 9d | 04 | 01 | 01 09 | 00 00 00 | 2c
+r ed | 04 | 01 | 00 00 | 03 00 00 | 76 71 22 11 11 11 11 22 22 22 22 22 22 22 22 22 33 33 33 33 33 | 73
+            ^^ SpO2
+                    ^^ file no. 9
+                         ^^^^^^^^ sign bits of the other top nibbles (don't forget: little endian and skip the top bit of each byte!)
+                                    s  s  _  _  _  _  _, _  _  _  _  _  _  _, _  _  _  _  _  _  _
+                                     ^  ^ base value (0x61 = 97)
+r ed | 04 | 01 | 01 00 | 00 00 00 | 22 11 11 11 22 22 22 22 22 22 22 21 11 11 00 00 11 11 11 11 12 | 4f
+r ed | 04 | 01 | 02 00 | 7e 7f 7f | 2f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 0b
+                                    _  s  s  s  s  s  s, s  s  s  s  s  s  s, s  s  s  s  s  s  s
+
+s 9d | 04 | 02 | 01 09 | 00 00 00 | 2d
+r ed | 04 | 02 | 00 00 | 03 20 38 | 75 7e 33 33 33 44 56 66 66 65 56 67 08 76 54 55 78 2a 2a 18 76 | 63
+            ^^ pulse
+                                     ^  ^ base value (0x5e = 94)
+                                    s  s  _  _  _  _  _, _  _  _  _  _  s  _, _  _  _  s  s  s  _
+r ed | 04 | 02 | 01 00 | 20 00 00 | 65 65 56 67 77 08 77 66 43 33 31 00 00 00 23 56 66 54 33 22 23 | 49
+                                    _  _  _  _  _  s  _, _  _  _  _  _  _  _, _  _  _  _  _  _  _
+r ed | 04 | 02 | 02 00 | 7e 7f 7f | 4f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 2c
+                                    _  s  s  s  s  s  s, s  s  s  s  s  s  s, s  s  s  s  s  s  s
+
+
+what happens in the recording if the value drops beyond range within a reading (e.g. 113 -> 98 BPM)?
+perhaps a new base value is set using 0xF_ 0xF_ ?
+
+let's look at another cap:
+
+s 9d | 04 | 01 | 01 01 | 00 00 00 | 24
+r ed | 04 | 01 | 00 00 | 03 00 00 | 76 72 44 44 44 44 33 33 33 33 22 22 22 22 22 22 22 22 22 22 22 | 2f
+r ed | 04 | 01 | 01 00 | 00 00 00 | 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 21 10 00 | 08
+r ed | 04 | 01 | 02 00 | 00 00 00 | 00 11 11 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 | 16
+r ed | 04 | 01 | 03 00 | 7e 7f 7f | 0f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 6c
+
+s 9d | 04 | 02 | 01 01 | 00 00 00 | 25
+r ed | 04 | 02 | 00 00 | 7f 7f 7f | 75 7b 2a 29 1a 2b 3c 4c 4b 29 08 08 08 08 08 08 08 08 08 08 08 | 4c
+r ed | 04 | 02 | 01 00 | 00 00 00 | 77 66 64 44 43 34 34 45 66 77 76 54 44 43 33 33 33 33 33 33 33 | 7c
+r ed | 04 | 02 | 02 00 | 00 00 0c | 33 33 33 33 33 33 33 33 33 33 33 33 33 33 32 10 76 72 43 21 00 | 59
+r ed | 04 | 02 | 03 00 | 78 7f 7f | 00 00 0f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 69
+
+s 9d | 04 | 01 | 01 02 | 00 00 00 | 25
+r ed | 04 | 01 | 00 00 | 03 00 00 | 76 72 66 55 55 55 44 43 33 22 22 22 22 22 22 23 33 44 44 44 32 | 1c
+r ed | 04 | 01 | 01 00 | 00 00 00 | 22 11 11 12 22 22 22 11 11 11 11 22 23 33 33 33 33 33 33 33 33 | 50
+r ed | 04 | 01 | 02 00 | 00 00 00 | 32 21 11 11 11 12 22 22 22 21 10 00 00 00 11 11 11 11 10 00 11 | 08
+r ed | 04 | 01 | 03 00 | 00 00 00 | 11 11 12 22 22 22 22 23 33 33 32 22 22 22 11 10 00 00 00 01 11 | 05
+r ed | 04 | 01 | 04 00 | 00 00 00 | 00 00 01 11 11 11 11 11 11 11 11 11 11 11 11 11 22 22 21 11 11 | 5b
+r ed | 04 | 01 | 05 00 | 00 00 00 | 12 22 22 22 11 00 00 00 00 01 11 11 11 22 22 22 22 22 11 11 12 | 12
+r ed | 04 | 01 | 06 00 | 00 00 00 | 22 22 22 22 22 22 22 21 11 22 22 11 11 11 11 22 22 22 22 22 22 | 6c
+r ed | 04 | 01 | 07 00 | 00 00 00 | 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 | 43
+r ed | 04 | 01 | 08 00 | 00 00 00 | 22 33 32 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 22 | 65
+r ed | 04 | 01 | 09 00 | 00 00 00 | 22 22 22 22 22 22 22 22 22 23 33 33 33 33 33 33 33 33 33 33 32 | 00
+r ed | 04 | 01 | 0a 00 | 00 00 00 | 22 22 22 23 33 33 33 33 33 33 33 22 22 22 23 33 33 33 33 32 22 | 13
+r ed | 04 | 01 | 0b 00 | 00 00 00 | 22 22 22 33 33 33 33 33 33 33 33 33 33 33 33 33 33 33 33 44 44 | 1b
+r ed | 04 | 01 | 0c 00 | 00 00 70 | 44 33 33 22 22 22 22 22 22 22 22 22 22 22 22 22 22 2f 7f 7f 7f | 20
+
+s 9d | 04 | 02 | 01 02 | 00 00 00 | 26
+r ed | 04 | 02 | 00 00 | 03 7c 0f | 75 71 00 00 00 12 24 55 67 1a 2b 3b 3b 3b 3b 2a 29 07 77 77 77 | 49
+                                    s  s  _  _  _  _  _, _  _  s  s  s  s  s, s  s  s  s  _  _  _
+r ed | 04 | 02 | 01 00 | 7f 7f 1f | 09 1a 2b 3b 2a 29 19 19 18 08 08 08 09 19 19 19 19 19 07 66 65 | 27
+                                    s  s  s  s  s  s  s, s  s  s  s  s  s  s, s  s  s  s  s  _  _
+r ed | 04 | 02 | 02 00 | 40 7f 7f | 55 55 55 56 67 77 08 08 19 19 19 19 19 19 1a 2a 2a 3c 5d 4c 4c | 2b
+                                    _  _  _  _  _  _  s, s  s  s  s  s  s  s, s  s  s  s  s  s  s
+r ed | 04 | 02 | 03 00 | 7f 7f 1e | 4c 4c 5d 5d 5d 5d 5d 5d 5d 5a 05 76 71 65 0f 76 7f 5b 29 76 76 | 54
+                                    s  s  s  s  s  s  s, s  s  s  s  s  s  s, _  s  s  s  s  _  _
+                                             skip bottom nibbles that are 0xF! ^
+r ed | 04 | 02 | 04 00 | 00 00 00 | 67 78 77 66 43 33 32 10 00 00 00 00 00 00 00 00 00 00 00 00 00 | 6b
+                                    _  _  _  _  _  _  _, _  _  _  _  _  _  _, _  _  _  _  _  _  _
+r ed | 04 | 02 | 05 00 | 00 5c 7f | 00 00 00 00 00 00 00 00 01 1e 75 7e 07 2c 4c 4c 4c 4c 4d 5e 6f | 62
+                                    _  _  _  _  _  _  _, _  _  s  s  s  _  s, s  s  s  s  s  s  s
+r ed | 04 | 02 | 06 00 | 03 00 00 | 74 7f 11 22 33 34 44 43 33 32 22 22 22 22 22 21 00 00 00 00 00 | 40
+                                    s  s  _  _  _  _  _, _  _  _  _  _  _  _, _  _  _  _  _  _  _
+r ed | 04 | 02 | 07 00 | 00 00 44 | 22 23 44 55 44 32 22 22 23 44 57 77 77 77 77 78 08 77 77 78 08 | 5e
+                                    _  _  _  _  _  _  _, _  _  _  _  _  _  _, _  _  s  _  _  _  s
+r ed | 04 | 02 | 08 00 | 7f 0f 00 | 19 19 19 19 19 19 18 08 08 08 07 77 77 66 66 66 66 55 55 44 55 | 1f
+                                    s  s  s  s  s  s  s, s  s  s  s  _  _  _, _  _  _  _  _  _  _
+r ed | 04 | 02 | 09 00 | 00 7e 7f | 66 66 54 33 33 44 67 77 08 08 08 08 07 08 08 08 19 2a 2a 2a 29 | 20
+                                    _  _  _  _  _  _  _, _  s  s  s  s  s  s, s  s  s  s  s  s  s
+r ed | 04 | 02 | 0a 00 | 7f 5f 7f | 19 08 08 08 08 08 08 09 19 19 08 07 78 09 19 19 08 19 1a 2a 2a | 2f
+                                    s  s  s  s  s  s  s, s  s  s  s  s  _  s, s  s  s  s  s  s  s
+r ed | 04 | 02 | 0b 00 | 7f 7f 7f | 29 19 19 19 1a 2a 1a 1a 19 19 19 19 1a 2a 2a 2a 4c 4c 4c 3b 3b | 3d
+                                    s  s  s  s  s  s  s, s  s  s  s  s  s  s, s  s  s  s  s  s  s
+r ed | 04 | 02 | 0c 00 | 7f 7f 7f | 3b 4c 5e 6e 6e 5b 2a 19 19 2a 2a 2a 2a 2b 3c 4c 4c 4c 4c 3b 3b | 29
+                                    s  s  s  s  s  s  s, s  s  s  s  s  s  s, s  s  s  s  s  s  s
+r ed | 04 | 02 | 0d 00 | 47 7f 7f | 2a 19 18 77 77 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 7e
+                                    s  s  s  _  _  _  _, s  s  s  s  s  s  s, s  s  s  s  s  s  s
+
+
+
+live data comes in two kinds:
+
+start live data:
+s 9b | 00 | 1b
+
+stop live data?:
+s 9b | 7f | 1a
+
+don't bother with curve? (verify this):
+s 9b | 01 | 1c
+
+1. pulse curve (00)
+
+r eb | 00 | 04 40 30 | 5f
+(finger is out)
+
+r eb | 00 | 06 35 06 | 2c
+r eb | 00 | 06 2f 05 | 25
+r eb | 00 | 06 2c 05 | 22
+r eb | 00 | 06 2a 05 | 20
+r eb | 00 | 06 29 05 | 1f
+r eb | 00 | 06 29 05 | 1f
+r eb | 00 | 06 2a 05 | 20
+r eb | 00 | 06 2b 05 | 21
+r eb | 00 | 06 2d 05 | 23
+r eb | 00 | 06 2f 05 | 25
+r eb | 00 | 06 30 06 | 27
+r eb | 00 | 06 30 06 | 27
+r eb | 00 | 06 30 06 | 27
+r eb | 00 | 06 2f 05 | 25
+r eb | 00 | 06 2d 05 | 23
+r eb | 00 | 06 2b 05 | 21
+r eb | 00 | 06 28 05 | 1e
+r eb | 00 | 06 27 04 | 1c
+r eb | 00 | 06 25 04 | 1a
+r eb | 00 | 06 23 04 | 18
+r eb | 00 | 06 21 04 | 16
+r eb | 00 | 06 1f 03 | 13
+r eb | 00 | 06 1e 03 | 12
+r eb | 00 | 06 1e 03 | 12
+r eb | 00 | 06 1d 03 | 11
+r eb | 00 | 06 1d 03 | 11
+r eb | 00 | 06 1d 03 | 11
+r eb | 00 | 06 1d 03 | 11
+r eb | 00 | 06 1d 03 | 11
+r eb | 00 | 06 1d 03 | 11
+r eb | 00 | 06 1d 03 | 11
+r eb | 00 | 06 1c 03 | 10
+r eb | 00 | 06 1c 03 | 10
+r eb | 00 | 06 1b 03 | 0f
+r eb | 00 | 06 1b 03 | 0f
+r eb | 00 | 06 1d 03 | 11
+r eb | 00 | 06 20 04 | 15
+r eb | 00 | 06 25 04 | 1a
+r eb | 00 | 06 2b 05 | 21
+r eb | 00 | 06 33 06 | 2a
+r eb | 00 | 06 3b 07 | 33
+r eb | 00 | 06 41 08 | 3a
+r eb | 00 | 06 44 08 | 3d
+r eb | 00 | 06 44 08 | 3d
+r eb | 00 | 06 43 08 | 3c
+r eb | 00 | 46 3f 07 | 77
+r eb | 00 | 46 3f 07 | 77
+             ^ can also be 5 or 4; error condition or low values?
+            ^ 4 for pulse beep?
+
+the precise encoding is as yet unknown
+
+pulse curve info arrives about once every 0.05 seconds; often three values per packet
+
+2. values (01)
+
+r eb | 01 | 06 7f 7f 7f 00 | 6f
+r eb | 01 | 06 7f 5f 7f 00 | 4f
+             ^ 6 = values are BS (=> b & 2 != 0 ???)
+r eb | 01 | 04 43 5f 7f 00 | 11
+r eb | 01 | 04 42 5f 7f 00 | 10
+r eb | 01 | 04 50 62 7f 00 | 21
+                  ^^ SPo2
+               ^^ pulse
+             ^ 4 = values are good (=> b & 2 == 0 ???)
+
+values arrive about once per second
+
+# REFERENCE
+
+## COMMANDS
+
+a command (or response) byte is signified by the top bit being set
+apart from the initialization sequence, all other bytes have the top bit unset
+this is good as it makes the protocol self-synchronizing
+
+0x80: COMMAND READY???
+0x81: COMMAND GET DEVICE NAME
+0x82: COMMAND GET VERSION INFO?
+0x83: COMMAND SET DATE/TIME
+0x8E: COMMAND READ PROPERTY
+0x8F: COMMAND SET PROPERTY
+0x9A: COMMAND KEEP ALIVE (no response)
+0x9B: COMMAND LIVE DATA
+0x9C: COMMAND ADVANCE AND SHOW FILE HEADER
+0x9F: COMMAND FILESTORE INFO
+0xA0: COMMAND MANUALLY RECORDED FILE METADATA
+0xA2: COMMAND READ PULSE FROM MANUALLY RECORDED FILE
+0xA3: COMMAND READ SPO2 FROM MANUALLY RECORDED FILE
+
+0xF0: RESPONSE READY???
+0xF1: RESPONSE GET DEVICE NAME
+0xF2: RESPONSE GET VERSION INFO?
+0xD0: RESPONSE MANUALLY RECORDED FILE METADATA
+0xD2: RESPONSE READ PULSE FROM MANUALLY RECORDED FILE
+0xD3: RESPONSE READ SPO2 FROM MANUALLY RECORDED FILE
+0xEB: RESPONSE LIVE DATA
+0xEC: RESPONSE ADVANCE AND SHOW FILE HEADER
+0xEF: RESPONSE FILESTORE INFO
+0xF3: RESPONSE SET DATE/TIME
+0xFE: RESPONSE READ PROPERTY
+0xFF: RESPONSE SET PROPERTY
+
+(response is generally command XOR 0x70)
+
+## PROPERTIES
+
+03: user name
+04: ???
+06: ??? bit mask of file slots currently occupied?
+07: recording mode (00 00: auto, 01 00: manual)
+
+## CHECKSUM
+
+sum of all bytes (from and including command) mod 128 (because top bit may not be set)
+mod 128 is equivalent to bitand 127
+
+
+SOME DATA
+
+d3 | 00 00 | 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 43
+d3 | 01 00 | 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 44
+d3 | 02 00 | 00 00 5b 00 00 00 00 00 00 00 00 00 10 00 00 00 | 40
+d3 | 03 00 | 00 41 5c 00 00 00 00 02 00 10 09 00 00 00 00 7f | 0d
+
+d200007f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f42
+d201007f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f43
+d2020000003d0000000000000000000000000011
+d2030000403d0000000000000000000000007f51
