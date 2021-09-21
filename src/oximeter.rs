@@ -81,9 +81,37 @@ pub enum CommandCode {
 impl CommandCode {
     pub fn known_fixed_length(&self) -> Option<usize> {
         match self {
+            Self::ReadyCommand => Some(2),
+            Self::GetDeviceNameCommand => Some(2),
+            Self::GetVersionInfoCommand => Some(2),
+            Self::SetDateTimeCommand => Some(10),
+            Self::ReadPropertyCommand => Some(3),
+            Self::SetPropertyCommand => None, // depends on the property; FIXME: differentiate here if we have at least 2 bytes?
+            Self::GetAuxiliaryDataCommand => None, // probably depends on the property as well
+            Self::KeepAliveCommand => Some(2),
+            Self::LiveDataCommand => Some(3),
+            Self::AdvanceAndShowAutoRecordedFileHeaderCommand => Some(3),
+            Self::ReadAutoRecordedFileCommand => None,
+            Self::FileStoreInfoCommand => Some(2),
+            Self::ManuallyRecordedFileMetadataCommand => Some(3),
+            Self::ReadPulseFromManuallyRecordedFileCommand => Some(5),
+            Self::ReadOxygenFromManuallyRecordedFileCommand => Some(5),
+
+            Self::ReadyResponse => Some(2),
+            Self::GetDeviceNameResponse => Some(10),
+            Self::GetVersionInfoResponse => Some(8),
+            Self::SetDateTimeResponse => Some(3),
+            Self::ReadPropertyResponse => None, // depends on the property; FIXME: differentiate here if we have at least 2 bytes?
+            Self::SetPropertyResponse => Some(3),
+            Self::GetAuxiliaryDataResponse => None, // probably depends on the property as well
+            Self::LiveDataResponse => None, // depends on the type (second byte)
+            Self::AdvanceAndShowAutoRecordedFileHeaderResponse => Some(21),
+            Self::ReadAutoRecordedFileResponse => Some(30),
+            Self::FileStoreInfoResponse => Some(8),
+            Self::ManuallyRecordedFileMetadataResponse => Some(14),
             Self::ReadPulseFromManuallyRecordedFileResponse => Some(20),
             Self::ReadOxygenFromManuallyRecordedFileResponse => Some(20),
-            Self::ReadAutoRecordedFileResponse => Some(30),
+
             _ => None,
         }
     }
