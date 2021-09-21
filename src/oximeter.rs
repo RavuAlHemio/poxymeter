@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 
 use hidapi::{HidDevice, HidResult};
+use log::{debug, log_enabled};
 
 
 /// Bytestring sent from computer to oximeter to establish communication.
@@ -76,6 +77,16 @@ pub enum CommandCode {
     SetPropertyResponse,
 
     Other(u8),
+}
+impl CommandCode {
+    pub fn known_fixed_length(&self) -> Option<usize> {
+        match self {
+            Self::ReadPulseFromManuallyRecordedFileResponse => Some(20),
+            Self::ReadOxygenFromManuallyRecordedFileResponse => Some(20),
+            Self::ReadAutoRecordedFileResponse => Some(30),
+            _ => None,
+        }
+    }
 }
 impl From<u8> for CommandCode {
     fn from(b: u8) -> Self {
@@ -300,6 +311,13 @@ impl Ord for RecordingMode {
 }
 
 pub fn send_to_oximeter(device: &HidDevice, data: &[u8]) -> HidResult<usize> {
+    if log_enabled!(log::Level::Debug) {
+        let byte_strs: Vec<String> = data.iter()
+            .map(|b| format!("{:02x}", *b))
+            .collect();
+        debug!("sending: {}", byte_strs.join(" "));
+    }
+
     let mut outgoing_data = Vec::with_capacity(64);
 
     // prefix with 0x00 report ID
@@ -317,6 +335,7 @@ pub fn send_to_oximeter(device: &HidDevice, data: &[u8]) -> HidResult<usize> {
 
 pub fn receive_from_oximeter(device: &HidDevice, queue: &mut CommandQueue) -> HidResult<()> {
     let mut incoming_data = vec![0; 64];
+    debug!("reading...");
     let bytes_read = device.read(&mut incoming_data)?;
     incoming_data.truncate(bytes_read);
 
@@ -337,6 +356,22 @@ pub fn index_of_command_start(bytes: &[u8]) -> Option<usize> {
 }
 
 
+/// Returns a `Some(usize)` value if the correct length for the given command can be determined and
+/// `None` if not.
+fn command_expected_length(command: &[u8]) -> Option<usize> {
+    if command.len() == 0 {
+        return None;
+    }
+
+    match command[0].into() {
+        CommandCode::ReadOxygenFromManuallyRecordedFileResponse => Some(20),
+        CommandCode::ReadPulseFromManuallyRecordedFileResponse => Some(20),
+        CommandCode::ReadAutoRecordedFileResponse => Some(30),
+        _ => None,
+    }
+}
+
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct CommandQueue {
     queue: VecDeque<Vec<u8>>,
@@ -352,6 +387,13 @@ impl CommandQueue {
 
     /// Enqueues commands from the received byte buffer.
     pub fn add_from_buffer(&mut self, bytes: &[u8]) {
+        if log_enabled!(log::Level::Debug) {
+            let byte_strs: Vec<String> = bytes.iter()
+                .map(|b| format!("{:02x}", *b))
+                .collect();
+            debug!("received data: {}", byte_strs.join(" "));
+        }
+
         // the buffer may:
         // (1) start midway through a command
         // (2) end midway through a command
@@ -372,6 +414,12 @@ impl CommandQueue {
                     // the holder now contains a full command; shunt it to the queue
                     // (the command might be invalid checksum-wise, but it's better to forward it to the
                     // user than to silently drop it)
+                    if log_enabled!(log::Level::Debug) {
+                        let byte_strs: Vec<String> = self.holder.iter()
+                            .map(|b| format!("{:02x}", *b))
+                            .collect();
+                        debug!("received command (variant 0): {}", byte_strs.join(" "));
+                    }
                     self.queue.push_back(self.holder.clone());
                     self.holder.clear();
                 }
@@ -381,7 +429,14 @@ impl CommandQueue {
                 while let Some(next_csi_offset) = index_of_command_start(&bytes[current_csi+1..]) {
                     // yes
                     let next_csi = current_csi + 1 + next_csi_offset;
-                    self.queue.push_back(Vec::from(&bytes[current_csi..next_csi]));
+                    let cmd = Vec::from(&bytes[current_csi..next_csi]);
+                    if log_enabled!(log::Level::Debug) {
+                        let byte_strs: Vec<String> = cmd.iter()
+                            .map(|b| format!("{:02x}", *b))
+                            .collect();
+                        debug!("received command (variant 1): {}", byte_strs.join(" "));
+                    }
+                    self.queue.push_back(cmd);
                     current_csi = next_csi;
                 }
 
@@ -389,6 +444,29 @@ impl CommandQueue {
                 self.holder.extend_from_slice(&bytes[current_csi..]);
             },
         }
+
+        if let Some(expected_length) = command_expected_length(&self.holder) {
+            // we can tell how long this command must be
+            if self.holder.len() < expected_length {
+                // the holder needs to fill up further
+                return;
+            }
+
+            // take out the command
+            let new_command: Vec<u8> = self.holder.drain(0..expected_length)
+                .collect();
+            self.queue.push_back(new_command);
+
+            // if the rest are zeroes, clear the holder
+            if self.holder.iter().all(|b| *b == 0x00) {
+                self.holder.clear();
+            }
+
+            // nothing else to do for the holder right now
+            return;
+        }
+
+        // time to perform some heuristics
 
         // try shaving off the zeroes in the holder
         let prev_holder_len = self.holder.len();
@@ -401,8 +479,15 @@ impl CommandQueue {
             // everything is coming up daisies
             return;
         };
+
         if is_checksum_ok(&self.holder) {
             // that's a finished command; enqueue it as well!
+            if log_enabled!(log::Level::Debug) {
+                let byte_strs: Vec<String> = self.holder.iter()
+                    .map(|b| format!("{:02x}", *b))
+                    .collect();
+                debug!("received command (variant 2): {}", byte_strs.join(" "));
+            }
             self.queue.push_back(self.holder.clone());
             self.holder.clear();
         } else {
@@ -414,6 +499,12 @@ impl CommandQueue {
 
             if is_checksum_ok(&self.holder) {
                 // well that's a stone off my chest
+                if log_enabled!(log::Level::Debug) {
+                    let byte_strs: Vec<String> = self.holder.iter()
+                        .map(|b| format!("{:02x}", *b))
+                        .collect();
+                    debug!("received command (variant 3): {}", byte_strs.join(" "));
+                }
                 self.queue.push_back(self.holder.clone());
                 self.holder.clear();
             } else {

@@ -183,17 +183,13 @@ fn handle_read_auto(oxdev: &HidDevice, mut queue: &mut CommandQueue, file_index:
                         receive_from_oximeter(&oxdev, &mut queue)
                             .expect("failed to receive response to read-auto-file request");
                         while let Some(response) = queue.dequeue_command() {
-                            if log_enabled!(log::Level::Debug) {
-                                let bstrs: Vec<String> = response.iter()
-                                    .map(|b| format!("{:02x}", b))
-                                    .collect();
-                                debug!("COMMAND {}", bstrs.join(" "));
-                            }
-
                             if !is_checksum_ok(&response) {
                                 continue;
                             }
                             if response[0] != CommandCode::ReadAutoRecordedFileResponse.into() {
+                                continue;
+                            }
+                            if response.len() != 30 {
                                 continue;
                             }
 
@@ -325,6 +321,9 @@ fn handle_read_manual(oxdev: &HidDevice, mut queue: &mut CommandQueue, file_inde
                 return;
             }
 
+            // round length down to a multiple of 27
+            let full_chunk_count = file_length / 27;
+
             start_time = Some(
                 NaiveDate::from_ymd(
                     (response[2] as i32) + 2000,
@@ -336,7 +335,7 @@ fn handle_read_manual(oxdev: &HidDevice, mut queue: &mut CommandQueue, file_inde
                     response[7] as u32
                 )
             );
-            this_file_length = Some(file_length);
+            this_file_length = Some(full_chunk_count * 27);
         }
 
         if let Some(st) = start_time {
@@ -377,13 +376,6 @@ fn handle_read_manual(oxdev: &HidDevice, mut queue: &mut CommandQueue, file_inde
             receive_from_oximeter(&oxdev, &mut queue)
                 .expect("failed to receive read-pulse request");
             while let Some(response) = queue.dequeue_command() {
-                if log_enabled!(log::Level::Debug) {
-                    let bstrs: Vec<String> = response.iter()
-                        .map(|b| format!("{:02x}", b))
-                        .collect();
-                    debug!("COMMAND {}", bstrs.join(" "));
-                }
-
                 if !is_checksum_ok(&response) {
                     continue;
                 }
@@ -437,6 +429,7 @@ fn handle_read_manual(oxdev: &HidDevice, mut queue: &mut CommandQueue, file_inde
                 }
             }
 
+            debug!("values.len(): {}, this_file_length: {}", values.len(), this_file_length);
             if values.len() >= this_file_length {
                 values.truncate(this_file_length);
                 break;
