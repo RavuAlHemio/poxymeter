@@ -2,6 +2,7 @@ notes regarding the protocol used by newer versions of the CMS50 pulse oximeter
 warning: very unstructured (sorry!)
 
 communication is via USB HID to endpoint 1 using URB interrupt transfers
+the HID report number is 0
 vendor ID is 0x28e9, product ID is 0x028a
 
 both host and device send 64 bytes at a time
