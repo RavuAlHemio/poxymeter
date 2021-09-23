@@ -10,7 +10,7 @@ shorter packets are right-padded with 0x00
 it is possible for packets to span multiple transmissions (e.g. streaming stored data)
 numbers spanning more than one byte are little-endian
 
-only the packet at the start of a command/response has its topmost bit set
+in general, only the packet at the start of a command/response has its topmost bit set
 this is good, as it makes the protocol self-synchronizing
 (if you start listening in the middle of a stream, you can still find out where one command ends and the next one begins)
 
@@ -19,6 +19,10 @@ normally:
     b0 | b1 << 8 | b2 << 16
 in this case:
     b0 | b1 << 7 | b2 << 14
+
+also, the last byte is a checksum (see bottom of this document)
+
+exceptions: initial "greeting", possibly also when deleting autorecorded files?
 
 
 setup stuff
@@ -63,6 +67,23 @@ s 9a 1a [keepalive?]
 s a3 | 00 00 00 | 23
 r d3 | 00 00 | 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 43
 r d3 | 01 00 | 40 10 5e 00 00 00 00 00 10 00 00 00 00 10 00 00 | 22
+               ^^^^^ top bits for all the other bytes (because of the topmost bit rule)
+                     (0x40 | (0x10 << 7)) = 0x840 in this case, which makes:
+                     _  _  _  _  _  _  s  _  _  _  _  s  _  _
+                     and gives us actual values of:
+                     5e 00 00 00 00 00 80 00 00 00 00 80 00 00
+                     ^^ base value; counts as a value on its own and is also the base
+                        for all the other (relative) values in this message
+                        ^^^^^... other values as differences to the base value (one per nibble)
+                                 bottom three bits per nibble: the actual value
+                                 top bit of nibble: 0 to add to base, 1 to subtract
+                                 e.g. base 0x5e and nibble 0b1001: 94 - 1 = 93
+                                             94              -  1
+                                 e.g. base 0x5e and nibble 0b0101: 94 + 5 = 99
+                                             94              +  5
+                                 note that every difference also adjusts the base value!
+                                 (unlike auto mode)
+
 r d3 | 02 00 | 10 00 5b 00 00 09 10 00 00 00 00 11 11 00 01 00 | 7c
 r d3 | 03 00 | 10 40 5d 00 09 09 10 01 00 00 01 01 00 09 00 10 | 41
 r d3 | 04 00 | 00 00 5b 00 00 00 10 00 00 00 00 00 00 00 00 00 | 42
@@ -153,6 +174,7 @@ s 9d | 02 7f 7f 7f 00 00 | 1c
 s 9b | 7f | 1a
 r eb | 7f | 6a
 (maybe this deletes the files instead)
+(probably not, though; this more likely turns off live data, just in case)
 
 
 # live data, finger out
@@ -178,7 +200,7 @@ s 9f | 1f
 r ef | 00 00 00 00 00 00 | 6f
 
 
-# set user and recording mode to auto
+# set device name to "auto" and recording mode to auto
 s 8f | 03 | 20 20 20 "auto" | 2b
 r ff | 00 | 7f
 
@@ -199,7 +221,7 @@ s 9d | 04 | 01 | 01 01 | 00 00 00 | 24
 r ed | 04 | 01 | 00 00 | 63 7f 7f 75 7f 00 00 00 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f | 37
             ^^ 01 = SpO2, 02 = pulse
                  ^^^^^ sequence number
-                         ^^^^^^^^ topmost bytes for all the following bytes
+                         ^^^^^^^^ topmost bits for all the following bytes
                                   ^^^^^... most values are simply the difference downward from the max value
                                            this max value is set by a sequence of 0xFa 0xFb
                                            whereupon the new max value becomes 0xab
@@ -265,7 +287,9 @@ r ed | 04 | 02 | 02 00 | 7e 7f 7f | 4f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f
 
 
 what happens in the recording if the value drops beyond range within a reading (e.g. 113 -> 98 BPM)?
-perhaps a new base value is set using 0xF_ 0xF_ ?
+=> a new base value is set using 0xF_ 0xF_
+if this is necessary while waiting for a low nibble value (i.e. every 2nd second), the nibble is set to 0xF
+(and should be skipped by the reading software)
 
 let's look at another cap:
 
@@ -305,7 +329,9 @@ r ed | 04 | 02 | 02 00 | 40 7f 7f | 55 55 55 56 67 77 08 08 19 19 19 19 19 19 1a
                                     _  _  _  _  _  _  s, s  s  s  s  s  s  s, s  s  s  s  s  s  s
 r ed | 04 | 02 | 03 00 | 7f 7f 1e | 4c 4c 5d 5d 5d 5d 5d 5d 5d 5a 05 76 71 65 0f 76 7f 5b 29 76 76 | 54
                                     s  s  s  s  s  s  s, s  s  s  s  s  s  s, _  s  s  s  s  _  _
+                                           adjustment of base value! ^^^^^
                                              skip bottom nibbles that are 0xF! ^
+                                               another adjustment of base value! ^^^^^
 r ed | 04 | 02 | 04 00 | 00 00 00 | 67 78 77 66 43 33 32 10 00 00 00 00 00 00 00 00 00 00 00 00 00 | 6b
                                     _  _  _  _  _  _  _, _  _  _  _  _  _  _, _  _  _  _  _  _  _
 r ed | 04 | 02 | 05 00 | 00 5c 7f | 00 00 00 00 00 00 00 00 01 1e 75 7e 07 2c 4c 4c 4c 4c 4d 5e 6f | 62
@@ -328,6 +354,35 @@ r ed | 04 | 02 | 0d 00 | 47 7f 7f | 2a 19 18 77 77 7f 7f 7f 7f 7f 7f 7f 7f 7f 7f
                                     s  s  s  _  _  _  _, s  s  s  s  s  s  s, s  s  s  s  s  s  s
 
 
+# interpreting recorded data
+
+warning!
+* in manual mode, when a base value appears (sixth byte of message), it has actually been measured and should be output
+* in auto mode, when a base value appears (0xF_ 0xF_ sequence), it should only be set as the base value but not output
+* in manual mode, a delta value adjusts the base value
+* in auto mode, a delta value leaves the base value unchanged
+
+manual mode example:
+r d3 | 01 00 | 40 10 5e 00 00 00 00 00 10 00 00 00 00 10 00 00 | 22
+add sign bits to data bytes:
+                     _  _  _  _  _  _  s  _  _  _  _  s  _  _
+                     5e 00 00 00 00 00 90 00 00 00 00 90 00 00
+recorded values are (read from left to right!):
+                     94 94 94 94 94 94 93 93 93 93 93 92 92 92
+                         94 94 94 94 94 93 93 93 93 93 92 92 92
+
+auto mode example (base value is 0x51 = 81 from a previous message):
+r ed | 04 | 02 | 03 00 | 7f 7f 1e | 4c 4c 5d 5d 5d 5d 5d 5d 5d 5a 05 76 71 65 0f 76 7f 5b  29  76  76 | 54
+add sign bits to data bytes:
+                                    s  s  s  s  s  s  s, s  s  s  s  s  s  s, _  s  s  s   s   _   _
+                                    cc cc dd dd dd dd dd dd dd da 85 f6 f1 e5 0f f6 ff db  a9  76  76
+recorded values are (read from left to right!)
+                                    69 69 68 68 68 68 68 68 68 68 73       83 97       98  101 104 104
+                                     69 69 68 68 68 68 68 68 68 71 76       92          100 102 105 105
+                                                                     new base    new base
+                                                                               skip
+
+# live data
 
 live data comes in two kinds
 
@@ -340,7 +395,7 @@ s 9b | 7f | 1a
 start live data without curve:
 s 9b | 01 | 1c
 [however, that means that the data is queued up and transferred every 3s]
-[to get fresh values, it might make sense to start full live data and only take the actual values]
+[to get fresh values, it might make sense to start full live data and ignore the curve values]
 
 1. pulse curve (00)
 
