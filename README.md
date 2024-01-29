@@ -1,6 +1,6 @@
 # Poxymeter
 
-An attempt to obtain readings from a newer CMS50 pulse oximeter without using the SpO2 Assistant application.
+An attempt to obtain readings from a newer CMS50 pulse oximeter (CMS50F and probably later models) without using the SpO2 Assistant application.
 
 ## Acknowledgements
 
