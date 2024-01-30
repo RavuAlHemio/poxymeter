@@ -215,7 +215,7 @@ fn handle_read_auto(oxdev: &HidDevice, mut queue: &mut CommandQueue, file_index:
                                 debug_all_bytes.push(top_nibble << 4 | bottom_nibble);
 
                                 if top_nibble == 0x0F {
-                                    if bottom_nibble == 0x0F && base_value_top_nibble {
+                                    if bottom_nibble == 0x0F && !base_value_top_nibble {
                                         // invalid value
                                         // (unless we are waiting for the bottom nibble of the new base value)
                                         values.push(0xFF);
